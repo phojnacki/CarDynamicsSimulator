@@ -15,6 +15,7 @@
     }
     #controls {
       margin: 10px;
+      text-align: center;
     }
     #simulationCanvas {
       background: #fff;
@@ -24,17 +25,27 @@
     #mobileControls {
       margin-top: 10px;
       display: flex;
-      justify-content: center;
-      gap: 10px;
+      flex-direction: column;
+      align-items: center;
+    }
+    #instruction {
+      margin-bottom: 5px;
+      font-size: 16px;
+      color: #333;
+    }
+    .buttonRow {
+      display: flex;
+      gap: 20px;
     }
     .control-btn {
-      width: 60px;
-      height: 60px;
-      font-size: 24px;
+      width: 120px;
+      height: 120px;
+      font-size: 48px;
       border: none;
       border-radius: 8px;
       background: #ddd;
       box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+      user-select: none;
     }
     .control-btn:active {
       background: #ccc;
@@ -51,9 +62,14 @@
   
   <!-- Mobile on-screen controls -->
   <div id="mobileControls">
-    <button id="btnLeft" class="control-btn">◀</button>
-    <button id="btnUp" class="control-btn">▲</button>
-    <button id="btnRight" class="control-btn">▶</button>
+    <div id="instruction">
+      Use the keyboard OR on-screen arrows: ▲ to accelerate, ◀/▶ to steer.
+    </div>
+    <div class="buttonRow">
+      <button id="btnLeft" class="control-btn">◀</button>
+      <button id="btnUp" class="control-btn">▲</button>
+      <button id="btnRight" class="control-btn">▶</button>
+    </div>
   </div>
 
   <script>
@@ -139,7 +155,7 @@
     const maxSpeed = 400;         // pixels per second
     const steeringRate = 3;       // radians per second
     const driftRecoveryConstant = 5;  // how fast the drift angle recovers to heading (scaled by frictionFactor)
-    const minTurnSpeed = 40;      // minimum speed required for turning
+    const minTurnSpeed = 20;      // minimum speed required for turning
 
     let lastTime = performance.now();
 
