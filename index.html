@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Oversteering Car Dynamics Simulation</title>
+  <style>
+    body {
+      background: #f0f0f0;
+      margin: 0;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+    }
+    #controls {
+      margin: 10px;
+    }
+    #simulationCanvas {
+      background: #fff;
+      border: 1px solid #ccc;
+    }
+    /* Mobile control keypad styling */
+    #mobileControls {
+      margin-top: 10px;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    .control-btn {
+      width: 60px;
+      height: 60px;
+      font-size: 24px;
+      border: none;
+      border-radius: 8px;
+      background: #ddd;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+    }
+    .control-btn:active {
+      background: #ccc;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <label for="frictionInput">Friction Factor (Surface Grip): </label>
+    <input type="range" id="frictionInput" min="0.1" max="1" step="0.01" value="0.5">
+    <span id="frictionValue">0.5</span>
+  </div>
+  <canvas id="simulationCanvas" width="1280" height="1024"></canvas>
+  
+  <!-- Mobile on-screen controls -->
+  <div id="mobileControls">
+    <button id="btnLeft" class="control-btn">◀</button>
+    <button id="btnUp" class="control-btn">▲</button>
+    <button id="btnRight" class="control-btn">▶</button>
+  </div>
+
+  <script>
+    // Get canvas and context
+    const canvas = document.getElementById('simulationCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // UI for friction factor
+    const frictionInput = document.getElementById('frictionInput');
+    const frictionValueDisplay = document.getElementById('frictionValue');
+    let frictionFactor = parseFloat(frictionInput.value);
+    frictionInput.addEventListener('input', function() {
+      frictionFactor = parseFloat(this.value);
+      frictionValueDisplay.textContent = frictionFactor;
+    });
+
+    // Load car image (top view)
+    const carImage = new Image();
+    carImage.src = 'porsche.png'; // Ensure this file is in the same directory
+
+    // Car state (starting in the center of the canvas)
+    const car = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      heading: 0,      // The direction the car is pointed (in radians)
+      driftAngle: 0,   // The direction in which the car is actually moving
+      speed: 0         // Current speed (pixels per second)
+    };
+
+    // Keyboard input state for desktop controls
+    const keys = {
+      ArrowUp: false,
+      ArrowLeft: false,
+      ArrowRight: false
+    };
+
+    document.addEventListener('keydown', function(e) {
+      if (e.code in keys) {
+        keys[e.code] = true;
+      }
+    });
+    document.addEventListener('keyup', function(e) {
+      if (e.code in keys) {
+        keys[e.code] = false;
+      }
+    });
+
+    // Mobile on-screen controls: add touch and mouse event listeners.
+    function addControlListeners(buttonId, keyName) {
+      const btn = document.getElementById(buttonId);
+      // For touch devices
+      btn.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        keys[keyName] = true;
+      });
+      btn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        keys[keyName] = false;
+      });
+      // For mouse events (desktop simulation)
+      btn.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        keys[keyName] = true;
+      });
+      btn.addEventListener('mouseup', function(e) {
+        e.preventDefault();
+        keys[keyName] = false;
+      });
+      // In case the user drags out of the button
+      btn.addEventListener('mouseleave', function(e) {
+        keys[keyName] = false;
+      });
+    }
+    addControlListeners('btnLeft', 'ArrowLeft');
+    addControlListeners('btnUp', 'ArrowUp');
+    addControlListeners('btnRight', 'ArrowRight');
+
+    // Array to hold skid mark trace points
+    const tracePoints = [];
+
+    // Simulation parameters
+    const accelerationRate = 200; // pixels per second^2
+    const maxSpeed = 400;         // pixels per second
+    const steeringRate = 3;       // radians per second
+    const driftRecoveryConstant = 5;  // how fast the drift angle recovers to heading (scaled by frictionFactor)
+    const minTurnSpeed = 40;      // minimum speed required for turning
+
+    let lastTime = performance.now();
+
+    function update(dt) {
+      // Accelerate if up arrow pressed; otherwise apply a little natural slowdown
+      if (keys.ArrowUp) {
+        car.speed += accelerationRate * dt;
+      } else {
+        car.speed *= 0.99;
+      }
+      if (car.speed > maxSpeed) car.speed = maxSpeed;
+      
+      // Only allow turning if the speed exceeds the minimum turning speed.
+      if (car.speed > minTurnSpeed) {
+        if (keys.ArrowLeft) {
+          car.heading -= steeringRate * dt;
+        }
+        if (keys.ArrowRight) {
+          car.heading += steeringRate * dt;
+        }
+      }
+      
+      // Compute difference between the car's heading and its current drift (velocity) direction
+      let angleDiff = normalizeAngle(car.heading - car.driftAngle);
+      // Update driftAngle: low friction (small frictionFactor) causes slower recovery,
+      // leading to oversteer (a fishtail effect)
+      car.driftAngle += angleDiff * frictionFactor * driftRecoveryConstant * dt;
+      
+      // Update position using the drift direction
+      car.x += car.speed * Math.cos(car.driftAngle) * dt;
+      car.y += car.speed * Math.sin(car.driftAngle) * dt;
+      
+      // Wrap around canvas boundaries
+      if (car.x < 0) car.x += canvas.width;
+      if (car.x > canvas.width) car.x -= canvas.width;
+      if (car.y < 0) car.y += canvas.height;
+      if (car.y > canvas.height) car.y -= canvas.height;
+      
+      // Record skid marks when the slip (difference) is significant and speed is above a threshold
+      if (Math.abs(angleDiff) > 0.2 && car.speed > 50) {
+        // Assume an approximate car length (in pixels) for the rear offset
+        const carLength = 50;
+        const rearX = car.x - (carLength / 2) * Math.cos(car.heading);
+        const rearY = car.y - (carLength / 2) * Math.sin(car.heading);
+        tracePoints.push({ x: rearX, y: rearY });
+      }
+    }
+
+    function draw() {
+      // Clear the canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw skid marks (as small semi-transparent circles)
+      ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+      for (let i = 0; i < tracePoints.length; i++) {
+        const pt = tracePoints[i];
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+      
+      // Draw the car image rotated to the car's heading
+      ctx.save();
+      ctx.translate(car.x, car.y);
+      ctx.rotate(car.heading);
+      const imgW = carImage.width;
+      const imgH = carImage.height;
+      ctx.drawImage(carImage, -imgW / 2, -imgH / 2);
+      ctx.restore();
+    }
+
+    function loop(timestamp) {
+      const dt = (timestamp - lastTime) / 1000;
+      lastTime = timestamp;
+      
+      update(dt);
+      draw();
+      
+      requestAnimationFrame(loop);
+    }
+
+    // Utility: normalize angle to be between -π and π
+    function normalizeAngle(angle) {
+      while (angle > Math.PI) angle -= 2 * Math.PI;
+      while (angle < -Math.PI) angle += 2 * Math.PI;
+      return angle;
+    }
+
+    // Start simulation once the car image is loaded
+    carImage.onload = function() {
+      requestAnimationFrame(loop);
+    };
+  </script>
+</body>
+</html>
